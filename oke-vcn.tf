@@ -29,9 +29,19 @@ resource "oci_core_service_gateway" "oke_svcgw" {
 	compartment_id = "${var.compartment_ocid}"
 	display_name = "oke_svcgw"
 	services {
-		service_id = "ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna"
+		#service_id = "ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna"
+		service_id = data.oci_core_services.all_oci_services.services[0].id
 	}
 	vcn_id = "${oci_core_vcn.oke_vcn.id}"
+}
+
+data "oci_core_services" "all_oci_services" {
+  filter {
+    name   = "name"
+    values = ["All .* Services In Oracle Services Network"]
+    regex  = true
+  }
+  #count = var.create_service_gateway == true ? 1 : 0
 }
 
 resource "oci_core_subnet" "oke_svclb_private_subnet" {
@@ -115,7 +125,7 @@ resource "oci_core_route_table" "oke_private_routetable" {
 	}
 	route_rules {
 		description = "traffic to OCI services"
-		destination = "all-iad-services-in-oracle-services-network"
+		destination = data.oci_core_services.all_oci_services.services[0].cidr_block
 		destination_type = "SERVICE_CIDR_BLOCK"
 		network_entity_id = "${oci_core_service_gateway.oke_svcgw.id}"
 	}
@@ -195,7 +205,7 @@ resource "oci_core_security_list" "oke_node_seclist" {
 	}
 	egress_security_rules {
 		description = "Allow worker nodes to communicate with OKE to ensure correct start-up and continued functioning"
-		destination = "all-iad-services-in-oracle-services-network"
+		destination = data.oci_core_services.all_oci_services.services[0].cidr_block
 		destination_type = "SERVICE_CIDR_BLOCK"
 		protocol = "6"
 		stateless = "false"
@@ -280,7 +290,7 @@ resource "oci_core_security_list" "oke_k8sApiEndpoint_seclist" {
 	display_name = "oke_k8sApiEndpoint_seclist"
 	egress_security_rules {
 		description = "Allow cluster control plane to communicate with OKE"
-		destination = "all-iad-services-in-oracle-services-network"
+		destination = data.oci_core_services.all_oci_services.services[0].cidr_block
 		destination_type = "SERVICE_CIDR_BLOCK"
 		protocol = "6"
 		stateless = "false"
