@@ -44,6 +44,26 @@ data "oci_core_services" "all_oci_services" {
   #count = var.create_service_gateway == true ? 1 : 0
 }
 
+resource "oci_core_subnet" "oke_pod_private_subnet" {
+	cidr_block = "10.0.30.0/24"
+	compartment_id = "${var.compartment_ocid}"
+	display_name = "oke_pod_private_subnet"
+	prohibit_public_ip_on_vnic = "true"
+	route_table_id = "${oci_core_route_table.oke_private_routetable.id}"
+	security_list_ids = ["${oci_core_security_list.oke_pod_seclist.id}"]
+	vcn_id = "${oci_core_vcn.oke_vcn.id}"
+}
+
+resource "oci_core_subnet" "oke_pod_public_subnet" {
+	cidr_block = "10.0.31.0/24"
+	compartment_id = "${var.compartment_ocid}"
+	display_name = "oke_pod_public_subnet"
+	prohibit_public_ip_on_vnic = "false"
+	route_table_id = "${oci_core_route_table.oke_public_routetable.id}"
+	security_list_ids = ["${oci_core_security_list.oke_pod_seclist.id}"]
+	vcn_id = "${oci_core_vcn.oke_vcn.id}"
+}
+
 resource "oci_core_subnet" "oke_svclb_private_subnet" {
 	cidr_block = "10.0.20.0/24"
 	compartment_id = "${var.compartment_ocid}"
@@ -141,6 +161,12 @@ resource "oci_core_route_table" "oke_public_routetable" {
 		destination_type = "CIDR_BLOCK"
 		network_entity_id = "${oci_core_internet_gateway.oke_igw.id}"
 	}
+	vcn_id = "${oci_core_vcn.oke_vcn.id}"
+}
+
+resource "oci_core_security_list" "oke_pod_seclist" {
+	compartment_id = "${var.compartment_ocid}"
+	display_name = "oke_pod_seclist"
 	vcn_id = "${oci_core_vcn.oke_vcn.id}"
 }
 
@@ -280,6 +306,27 @@ resource "oci_core_security_list" "oke_node_seclist" {
 		tcp_options {
             max = 22
             min = 22
+		}
+	}
+	ingress_security_rules {
+		description = "Allow traffic from load balancers (private subnet) to worker nodes"
+		protocol = "6"
+		source = "10.0.20.0/24"
+		stateless = "false"
+		tcp_options {
+            min = 30000
+            max = 32767
+		}
+	}
+	ingress_security_rules {
+		description = "Allow traffic from load balancers (public subnet) to worker nodes"
+		protocol = "6"
+		//source = "10.0.21.0/24"
+		source = "0.0.0.0/0"
+		stateless = "false"
+		tcp_options {
+            min = 30000
+            max = 32767
 		}
 	}
 	vcn_id = "${oci_core_vcn.oke_vcn.id}"
@@ -459,6 +506,93 @@ resource "oci_core_network_security_group_security_rule" "oke_node_nsg_sshfroman
         destination_port_range {
             max = 22
             min = 22
+        }
+    }
+}
+
+resource "oci_core_network_security_group" "oke_lb_nsg_tcp80" {
+    compartment_id = "${var.compartment_ocid}"
+    vcn_id = "${oci_core_vcn.oke_vcn.id}"
+	display_name = "oke_lb_nsg_tcp80"
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_lb_nsg_tcp80_rule1" {
+    network_security_group_id = oci_core_network_security_group.oke_lb_nsg_tcp80.id
+    direction = "INGRESS"
+    protocol = "6"
+    description = "allows TCP/80 from everywhere"
+    source = "0.0.0.0/0"
+    source_type = "CIDR_BLOCK"
+    tcp_options {
+        destination_port_range {
+            max = 80
+            min = 80
+        }
+    }
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_lb_nsg_tcp80_rule2" {
+    network_security_group_id = oci_core_network_security_group.oke_lb_nsg_tcp80.id
+    direction = "EGRESS"
+    protocol = "6"
+    description = "allows TCP traffic from LB to workers (private subnet)"
+    destination = "10.0.10.0/24"
+    source_type = "CIDR_BLOCK"
+    tcp_options {
+        destination_port_range {
+            min = 30000
+            max = 32767
+        }
+    }
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_lb_nsg_tcp80_rule3" {
+    network_security_group_id = oci_core_network_security_group.oke_lb_nsg_tcp80.id
+    direction = "EGRESS"
+    protocol = "6"
+    description = "allows TCP traffic from LB to workers (public subnet)"
+    destination = "10.0.11.0/24"
+    source_type = "CIDR_BLOCK"
+    tcp_options {
+        destination_port_range {
+            min = 30000
+            max = 32767
+        }
+    }
+}
+
+resource "oci_core_network_security_group" "oke_pod_nsg" {
+    compartment_id = "${var.compartment_ocid}"
+    vcn_id = "${oci_core_vcn.oke_vcn.id}"
+	display_name = "oke_pod_nsg"
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_egress1" {
+    network_security_group_id = oci_core_network_security_group.oke_pod_nsg.id
+    direction = "EGRESS"
+    protocol = "6"
+    description = "allows TCP/30000-32767 egress from pods to pods"
+    destination = oci_core_network_security_group.oke_pod_nsg.id
+    destination_type = "NETWORK_SECURITY_GROUP"
+    tcp_options {
+        destination_port_range {
+            min = 30000
+            max = 32767
+        }
+    }
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_ingress1" {
+    network_security_group_id = oci_core_network_security_group.oke_pod_nsg.id
+    direction = "INGRESS"
+    protocol = "6"
+    description = "allows TCP/30000-32767 egress from pods to pods"
+    source = oci_core_network_security_group.oke_pod_nsg.id
+    source_type = "NETWORK_SECURITY_GROUP"
+    tcp_options {
+        destination_port_range {
+            min = 30000
+            max = 32767
         }
     }
 }
