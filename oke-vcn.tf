@@ -571,28 +571,25 @@ resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_egress1" {
     network_security_group_id = oci_core_network_security_group.oke_pod_nsg.id
     direction = "EGRESS"
     protocol = "6"
-    description = "allows TCP/30000-32767 egress from pods to pods"
+    description = "allows all traffic between pods"
     destination = oci_core_network_security_group.oke_pod_nsg.id
     destination_type = "NETWORK_SECURITY_GROUP"
-    tcp_options {
-        destination_port_range {
-            min = 30000
-            max = 32767
-        }
-    }
 }
 
-resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_ingress1" {
+resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_egress2" {
     network_security_group_id = oci_core_network_security_group.oke_pod_nsg.id
-    direction = "INGRESS"
+    direction = "EGRESS"
     protocol = "6"
-    description = "allows TCP/30000-32767 egress from pods to pods"
-    source = oci_core_network_security_group.oke_pod_nsg.id
-    source_type = "NETWORK_SECURITY_GROUP"
-    tcp_options {
-        destination_port_range {
-            min = 30000
-            max = 32767
-        }
-    }
+    description = "allows pods to access Internet"
+    destination = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+}
+
+resource "oci_core_network_security_group_security_rule" "oke_pod_nsg_egress3" {
+	network_security_group_id = oci_core_network_security_group.oke_pod_nsg.id
+	direction = "EGRESS"
+    protocol = "6"
+    description = "allows pods to access OCI Services"
+	destination = data.oci_core_services.all_oci_services.services[0].cidr_block
+	destination_type = "SERVICE_CIDR_BLOCK"
 }
